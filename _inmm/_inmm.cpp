@@ -1,11 +1,15 @@
-#include <stdio.h>
 #include <Windows.h>
 #include <WinGDI.h>
 #include <ddraw.h>
 #include <MMSystem.h>
+#include <Shlwapi.h>
 
 #define _INMM_LOG_OUTPUT _DEBUG
 //#define _INMM_PERF_LOG
+
+#if _INMM_LOG_OUTPUT
+#include <stdio.h>
+#endif
 
 static HDC hDesktopDC = NULL;
 static HPALETTE hPalette = NULL;
@@ -118,7 +122,7 @@ static void InitFont();
 static void InitPalette();
 static void InitCoinImage();
 static void Terminate();
-static bool ReadLine(FILE *fp, char *buf, int len);
+static int ReadLine(char *p, char *buf, int len);
 
 // winmm.dllのAPI転送用
 typedef MCIERROR (WINAPI *LPFNMCISENDCOMMANDA)(MCIDEVICEID, UINT, DWORD, DWORD);
@@ -157,11 +161,8 @@ BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID lpvReserved)
 	switch (fdwReason)
 	{
 	case DLL_PROCESS_ATTACH:
+		DisableThreadLibraryCalls(hInstDLL);
 		Init();
-		break;
-	case DLL_THREAD_ATTACH:
-		break;
-	case DLL_THREAD_DETACH:
 		break;
 	case DLL_PROCESS_DETACH:
 		Terminate();
@@ -1941,34 +1942,63 @@ void Init()
 //
 void LoadIniFile()
 {
+	// iniファイル名を設定する
 	char szIniFileName[MAX_PATH];
 	GetCurrentDirectory(MAX_PATH, szIniFileName);
 	lstrcat(szIniFileName, "\\_inmm.ini");
 
-	FILE *fp;
-	fopen_s(&fp, szIniFileName, "r");
-	if (fp == NULL)
+	// iniファイルを開く
+	HANDLE hIniFile = CreateFile(szIniFileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hIniFile == NULL)
 	{
 		return;
 	}
 
+	// iniファイルのサイズを取得する
+	DWORD dwIniFileSize = GetFileSize(hIniFile, NULL);
+	if (dwIniFileSize == 0xFFFFFFFF)
+	{
+		return;
+	}
+
+	// iniファイル読み込み用のバッファを確保する
+	char *lpszIniFileBuf = (char *)HeapAlloc(GetProcessHeap(), 0, dwIniFileSize + 1);
+	if (lpszIniFileBuf == NULL)
+	{
+		return;
+	}
+
+	// iniファイルの内容を読み込む
+	DWORD dwReadSize;
+	if (ReadFile(hIniFile, lpszIniFileBuf, dwIniFileSize, &dwReadSize, NULL) == FALSE || dwReadSize != dwIniFileSize)
+	{
+		return;
+	}
+	lpszIniFileBuf[dwIniFileSize] = '\0';
+
+	// iniファイルを閉じる
+	CloseHandle(hIniFile);
+
 	const int nLineBufSize = 512;
 	char szLineBuf[nLineBufSize];
+	const int nHexBufSize = 64;
+	char szHexBuf[nHexBufSize];
+	szHexBuf[0] = '0';
+	szHexBuf[1] = 'x';
 	int nMagicCode = 0;
+	char *p = lpszIniFileBuf;
 
-	while (!feof(fp))
+	while (p < lpszIniFileBuf + dwIniFileSize)
 	{
-		if (!ReadLine(fp, szLineBuf, nLineBufSize))
-		{
-			break;
-		}
-		char *p = szLineBuf;
+		int len = ReadLine(p, szLineBuf, nLineBufSize);
+		p += len;
+		char *r = szLineBuf;
 		// 空行/コメント行/セクション行は読み飛ばす
-		if ((*p == '\0') || (*p == '#') || (*p == '['))
+		if ((*r == '\0') || (*r == '#') || (*r == '['))
 		{
 			continue;
 		}
-		char *s = p;
+		char *s = r;
 		while ((*s != '=') && (*s != '\0'))
 		{
 			s++;
@@ -1980,64 +2010,70 @@ void LoadIniFile()
 		}
 		*s++ = '\0';
 		// 色指定
-		if (!strncmp(p, "Color", 5) && (*(p + 5) >= 'A') && (*(p + 5) <= 'Z') && (*s == '$'))
+		if ((*r == 'C') && (*(r + 1) == 'o') && (*(r + 2) == 'l') && (*(r + 3) == 'o') && (*(r + 4) == 'r') &&
+			(*(r + 5) >= 'A') && (*(r + 5) <= 'Z') && (*s == '$'))
 		{
-			int nColorIndex = *(p + 5) - 'A';
-			DWORD color = strtoul(s + 1, NULL, 16);
+			int nColorIndex = *(r + 5) - 'A';
+			int c;
+			lstrcpy(&szHexBuf[2], s + 1);
+			StrToIntEx(szHexBuf, STIF_SUPPORT_HEX, &c);
+			DWORD color = c & 0x00FFFFFF;
 			colorTable[nColorIndex].r = (BYTE)(color & 0x000000FF);
 			colorTable[nColorIndex].g = (BYTE)((color & 0x0000FF00) >> 8);
 			colorTable[nColorIndex].b = (BYTE)((color & 0x00FF0000) >> 16);
 		}
-		else if (!lstrcmp(p, "MagicCode"))
+		else if (!lstrcmp(r, "MagicCode"))
 		{
-			nMagicCode = strtol(s, NULL, 0);
+			nMagicCode = StrToInt(s);
 			if ((nMagicCode < 0) || (nMagicCode >= nMaxFontTable))
 			{
 				nMagicCode = 0;
 			}
 		}
-		else if (!lstrcmp(p, "Font"))
+		else if (!lstrcmp(r, "Font"))
 		{
 			lstrcpy(fontTable[nMagicCode].szFaceName, s);
 		}
-		else if (!lstrcmp(p, "Height"))
+		else if (!lstrcmp(r, "Height"))
 		{
-			fontTable[nMagicCode].nHeight = strtol(s, NULL, 0);
+			fontTable[nMagicCode].nHeight = StrToInt(s);
 		}
-		else if (!lstrcmp(p, "Bold"))
+		else if (!lstrcmp(r, "Bold"))
 		{
-			fontTable[nMagicCode].nBold = strtol(s, NULL, 0);
-		}
-		else if (!lstrcmp(p, "AdjustX"))
+			fontTable[nMagicCode].nBold = StrToInt(s);
+	}
+		else if (!lstrcmp(r, "AdjustX"))
 		{
-			fontTable[nMagicCode].nAdjustX = strtol(s, NULL, 0);
+			fontTable[nMagicCode].nAdjustX = StrToInt(s);
 		}
-		else if (!lstrcmp(p, "AdjustY"))
+		else if (!lstrcmp(r, "AdjustY"))
 		{
-			fontTable[nMagicCode].nAdjustY = strtol(s, NULL, 0);
+			fontTable[nMagicCode].nAdjustY = StrToInt(s);
 		}
-		else if (!lstrcmp(p, "Coin"))
+		else if (!lstrcmp(r, "Coin"))
 		{
 			lstrcpy(szCoinFileName, s);
 		}
-		else if (!lstrcmp(p, "CoinAdjustX"))
+		else if (!lstrcmp(r, "CoinAdjustX"))
 		{
-			nCoinAdjustX = strtol(s, NULL, 0);
+			nCoinAdjustX = StrToInt(s);
 		}
-		else if (!lstrcmp(p, "CoinAdjustY"))
+		else if (!lstrcmp(r, "CoinAdjustY"))
 		{
-			nCoinAdjustY = strtol(s, NULL, 0);
+			nCoinAdjustY = StrToInt(s);
 		}
-		else if (!lstrcmp(p, "MaxLines"))
+		else if (!lstrcmp(r, "MaxLines"))
 		{
-			nMaxLines = strtol(s, NULL, 0);
+			nMaxLines = StrToInt(s);
 		}
-		else if (!lstrcmp(p, "MaxWordChars"))
+		else if (!lstrcmp(r, "MaxWordChars"))
 		{
-			nMaxWordChars = strtol(s, NULL, 0);
+			nMaxWordChars = StrToInt(s);
 		}
 	}
-	fclose(fp);
+	
+	// iniファイル読み込み用のバッファを解放する
+	HeapFree(GetProcessHeap(), 0, lpszIniFileBuf);
 }
 
 //
@@ -2046,7 +2082,11 @@ void LoadIniFile()
 void InitFont()
 {
 	LOGFONT lf;
-	memset(&lf, 0, sizeof(lf));
+	char *p = (char *)&lf;
+	for (int i = 0; i < sizeof(lf); i++)
+	{
+		*p = 0;
+	}
 	lf.lfWidth = 0;
 	lf.lfEscapement = 0;
 	lf.lfOrientation = 0;
@@ -2084,7 +2124,7 @@ void InitFont()
 //
 void InitPalette()
 {
-	LOGPALETTE *lpPalette = (LOGPALETTE *)malloc(sizeof(LOGPALETTE) + sizeof(PALETTEENTRY) * (nMaxColorTable - 1));
+	LOGPALETTE *lpPalette = (LOGPALETTE *)HeapAlloc(GetProcessHeap(), 0, sizeof(LOGPALETTE) + sizeof(PALETTEENTRY) * (nMaxColorTable - 1));
 	lpPalette->palVersion = 0x0300;
 	lpPalette->palNumEntries = nMaxColorTable;
 	for (int i = 0; i < nMaxColorTable; i++)
@@ -2095,7 +2135,7 @@ void InitPalette()
 		lpPalette->palPalEntry[i].peFlags = 0;
 	}
 	hPalette = CreatePalette(lpPalette);
-	free(lpPalette);
+	HeapFree(GetProcessHeap(), 0, lpPalette);
 	SelectPalette(hDesktopDC, hPalette, FALSE);
 	RealizePalette(hDesktopDC);
 }
@@ -2138,23 +2178,41 @@ void Terminate()
 }
 
 //
-// ファイルから1行を読み込み、末尾の改行文字を削除する
+// 1行をバッファに読み込む
 //
 // パラメータ
-//   fp				ファイルポインタ
+//   p				文字列ポインタ
 //   buf			文字列バッファ
 //   len			文字列バッファの最大長
+// 戻り値
+//   1行のサイズ
 //
-bool ReadLine(FILE *fp, char *buf, int len)
+int ReadLine(char *p, char *buf, int len)
 {
-	if (fgets(buf, len, fp) == NULL)
+	char *e = buf + len - 1;
+	char *r = p;
+	char *s = buf;
+	while (s < e)
 	{
-		return false;
+		if (*r == '\0')
+		{
+			*s = '\0';
+			return (r - p + 1);
+		}
+		if ((*r == '\r') || (*r == '\n'))
+		{
+			break;
+		}
+		*s++ = *r++;
 	}
-	char *p = strchr(buf, '\n');
-	if (*p != NULL)
+	*s = '\0';
+	while (*r != '\0')
 	{
-		*p = '\0';
+		if ((*r != '\r') && (*r == '\n'))
+		{
+			break;
+		}
+		r++;
 	}
-	return true;
+	return (r - p + 1);
 }
