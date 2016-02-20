@@ -45,7 +45,7 @@ static COLOR_TABLE colorTable[nMaxColorTable] =
 	{ 255, 255,   0 }, // D
 	{ 255,   0, 255 }, // E
 	{ 255, 128,   0 }, // F
-	{   0, 128,   0 }, // G
+	{   0, 100,   0 }, // G
 	{ 128, 128, 128 }, // H
 	{   0,   0, 255 }, // I
 	{   0, 192,   0 }, // J
@@ -88,7 +88,7 @@ static const int nCoinWidth = 12;
 static const int nCoinHeight = 12;
 
 // 最大表示可能行数
-static int nMaxLines = 84;
+static int nMaxLines = 54;
 
 // 単語内の最大表示可能文字数
 static int nMaxWordChars = 24;
@@ -119,6 +119,7 @@ static void ShowCoinImage(LPPOINT lpPoint, HDC hDC);
 static int CalcColorWordWrap(LPBYTE lpBuffer, LPCBYTE lpString);
 static int CalcNumberWordWrap(LPBYTE lpBuffer, LPCBYTE lpString);
 static void Init();
+static void SetFontDefault();
 static void LoadIniFile();
 static void InitFont();
 static void InitPalette();
@@ -1933,6 +1934,7 @@ void Init()
 
 	hDesktopDC = GetWindowDC(HWND_DESKTOP);
 
+	SetFontDefault();
 	LoadIniFile();
 	InitFont();
 	InitPalette();
@@ -2114,11 +2116,61 @@ void InitFont()
 				continue;
 			}
 		}
-		lf.lfHeight = fontTable[i].nHeight;
+		lf.lfHeight = (fontTable[i].nHeight != 0) ? fontTable[i].nHeight : 12;
 		lf.lfWeight = (fontTable[i].nBold != 0) ? FW_BOLD : FW_NORMAL;
 		lstrcpy(lf.lfFaceName, fontTable[i].szFaceName);
 		fontTable[i].hFont = CreateFontIndirect(&lf);
 	}
+}
+
+//
+// フォントの初期値設定
+//
+void SetFontDefault()
+{
+	// arial10
+	lstrcpy(fontTable[6].szFaceName, "MS UI Gothic");
+	fontTable[6].nHeight = 7;
+	fontTable[6].nAdjustY = 1;
+
+	// arial8
+	lstrcpy(fontTable[4].szFaceName, "MS UI Gothic");
+	fontTable[4].nHeight = 5;
+	fontTable[4].nAdjustY = 1;
+
+	// eurostilecond10
+	lstrcpy(fontTable[7].szFaceName, "MS UI Gothic");
+	fontTable[7].nHeight = 7;
+	fontTable[7].nAdjustY = 1;
+
+	// eurostilecond12
+	lstrcpy(fontTable[9].szFaceName, "MS UI Gothic");
+	fontTable[9].nHeight = 9;
+	fontTable[9].nAdjustY = 1;
+
+	// eurostilecond14
+	lstrcpy(fontTable[11].szFaceName, "MS UI Gothic");
+	fontTable[11].nHeight = 12;
+
+	// eurostilecond14bold
+	lstrcpy(fontTable[10].szFaceName, "ＭＳ Ｐゴシック");
+	fontTable[10].nHeight = 12;
+
+	// eurostilecond18bold
+	lstrcpy(fontTable[14].szFaceName, "MS UI Gothic");
+	fontTable[14].nHeight = 14;
+	fontTable[14].nBold = 1;
+	fontTable[14].nAdjustY= 1;
+
+	// eurostilecond20bold
+	lstrcpy(fontTable[16].szFaceName, "ＭＳ Ｐゴシック");
+	fontTable[16].nHeight = 12;
+	fontTable[16].nAdjustY = 1;
+
+	// eurostilecond24bold
+	lstrcpy(fontTable[20].szFaceName, "ＭＳ Ｐゴシック");
+	fontTable[20].nHeight = 12;
+	fontTable[20].nAdjustY = 1;
 }
 
 //
