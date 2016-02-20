@@ -1,7 +1,6 @@
 #include <Windows.h>
 #include <WinGDI.h>
 #include <ddraw.h>
-#include <MMSystem.h>
 #include <Shlwapi.h>
 
 #define _INMM_LOG_OUTPUT _DEBUG
@@ -9,6 +8,9 @@
 
 #if _INMM_LOG_OUTPUT
 #include <stdio.h>
+#ifdef _INMM_PERF_LOG
+#include <MMSystem.h>
+#endif
 #endif
 
 static HDC hDesktopDC = NULL;
@@ -526,7 +528,7 @@ int WINAPI GetTextWidth(LPCBYTE lpString, int nMagicCode, DWORD dwFlags)
 	QueryPerformanceCounter(&nAfter);
 	fprintf(fpLog, "[PERF] GetTextWidth: %lf\n", (double)(nAfter.QuadPart - nBefore.QuadPart) * 1000 / nFreq.QuadPart);
 #endif
-	fprintf(fpLog, "GetTextWidth: %s (%d) %X => %d\n", lpString, nMagicCode, dwFlags, nMaxWidth);
+	fprintf(fpLog, "GetTextWidth: %s (%d) %X => %d\n", (char *)lpString, nMagicCode, dwFlags, nMaxWidth);
 #endif
 
 	return nMaxWidth;
@@ -611,7 +613,7 @@ void WINAPI TextOutDC1(LPRECT lpRect, int x, int y, LPCBYTE lpString, LPDIRECTDR
 void WINAPI TextOutDC2(LPRECT lpRect, int *px, int *py, LPCBYTE lpString, LPDIRECTDRAWSURFACE lpDDS, int nMagicCode, DWORD dwColor, DWORD dwFlags)
 {
 #if _INMM_LOG_OUTPUT
-	fprintf(fpLog, "TextOutDC2 %s (%d,%d) %X %d %X %X\n", lpString, *px, *py, lpDDS, nMagicCode, dwColor, dwFlags);
+	fprintf(fpLog, "TextOutDC2 %s (%d,%d) %X %d %X %X\n", (char *)lpString, *px, *py, (DWORD)lpDDS, nMagicCode, dwColor, dwFlags);
 #ifdef _INMM_PERF_LOG
 	LARGE_INTEGER nFreq;
 	LARGE_INTEGER nBefore;
@@ -973,9 +975,9 @@ void TextOutWord(LPCBYTE lpString, int nLen, LPPOINT lpPoint, LPRECT lpRect, HDC
 {
 #if _INMM_LOG_OUTPUT
 #ifndef _INMM_PERF_LOG
-	fprintf(fpLog, "  TextOutWord %s %d (%d,%d) (%d,%d)-(%d,%d) %X %d %X %X\n", lpString, nLen, lpPoint->x, lpPoint->y,
+	fprintf(fpLog, "  TextOutWord %s %d (%d,%d) (%d,%d)-(%d,%d) %X %d %X %X\n", (char *)lpString, nLen, lpPoint->x, lpPoint->y,
 		(lpRect != NULL) ? lpRect->left : 0, (lpRect != NULL) ? lpRect->top : 0, (lpRect != NULL) ? lpRect->right : 0, (lpRect != NULL) ? lpRect->bottom : 0,
-		hDC, nMagicCode, (DWORD)color, dwFlags);
+		(DWORD)hDC, nMagicCode, (DWORD)color, dwFlags);
 #endif
 #endif
 
@@ -1537,7 +1539,7 @@ int WINAPI CalcLineBreak(LPBYTE lpBuffer, LPCBYTE lpString)
 	QueryPerformanceCounter(&nAfter);
 	fprintf(fpLog, "[PERF] CalcLineBreak: %lf\n", (double)(nAfter.QuadPart - nBefore.QuadPart) * 1000 / nFreq.QuadPart);
 #endif
-	fprintf(fpLog, "CalcLineBreak: %s (%d) %s\n", lpBuffer, p - lpBuffer, lpString);
+	fprintf(fpLog, "CalcLineBreak: %s (%d) %s\n", (char *)lpBuffer, p - lpBuffer, (char *)lpString);
 #endif
 
 	return p - lpBuffer;
@@ -1721,7 +1723,7 @@ int CalcColorWordWrap(LPBYTE lpBuffer, LPCBYTE lpString)
 #if _INMM_LOG_OUTPUT
 #ifndef _INMM_PERF_LOG
 	*p = '\0';
-	fprintf(fpLog, "CalcColorWordWrap: %s (%d) %s\n", lpBuffer, p - lpBuffer, lpString);
+	fprintf(fpLog, "CalcColorWordWrap: %s (%d) %s\n", (char *)lpBuffer, p - lpBuffer, (char *)lpString);
 #endif
 #endif
 
@@ -1771,7 +1773,7 @@ int CalcNumberWordWrap(LPBYTE lpBuffer, LPCBYTE lpString)
 			if ((*(s + 1) < '0') || (*(s + 1) > '9') || (*(s + 2) < '0') || (*(s + 2) > '9') || (*(s + 3) < '0') || (*(s + 3) > '9'))
 			{
 				// ”Žš‚ÌŒã‚ë‚Ì%‚Í‚Ü‚Æ‚ß‚Äˆ—‚·‚é
-				*p++ = *s++;
+				*p++ = *s;
 			}
 			break;
 
@@ -1780,7 +1782,7 @@ int CalcNumberWordWrap(LPBYTE lpBuffer, LPCBYTE lpString)
 			{
 				// ”Žš‚ÌŒã‚ë‚Ì%‚Í‚Ü‚Æ‚ß‚Äˆ—‚·‚é
 				*p++ = *s++;
-				*p++ = *s++;
+				*p++ = *s;
 			}
 			break;
 
@@ -1796,7 +1798,7 @@ int CalcNumberWordWrap(LPBYTE lpBuffer, LPCBYTE lpString)
 			case 0x93: // “
 				// ”Žš‚ÌŒã‚ë‚Ì%‚Í‚Ü‚Æ‚ß‚Äˆ—‚·‚é
 				*p++ = *s++;
-				*p++ = *s++;
+				*p++ = *s;
 				break;
 			}
 			break;
@@ -1817,7 +1819,7 @@ int CalcNumberWordWrap(LPBYTE lpBuffer, LPCBYTE lpString)
 #if _INMM_LOG_OUTPUT
 #ifndef _INMM_PERF_LOG
 	*p = '\0';
-	fprintf(fpLog, "CalcNumberWordWrap: %s (%d) %s\n", lpBuffer, p - lpBuffer, lpString);
+	fprintf(fpLog, "CalcNumberWordWrap: %s (%d) %s\n", (char *)lpBuffer, p - lpBuffer, (char *)lpString);
 #endif
 #endif
 
@@ -1869,7 +1871,7 @@ int WINAPI strnlen0(LPCBYTE lpString, int nMax)
 	}
 
 #if _INMM_LOG_OUTPUT
-	fprintf(fpLog, "strnlen0: %s (%d) => %d\n", lpString, nMax, len);
+	fprintf(fpLog, "strnlen0: %s (%d) => %d\n", (char *)lpString, nMax, len);
 #endif
 
 	return len;
