@@ -380,8 +380,8 @@ int WINAPI GetTextWidth(LPCBYTE lpString, int nMagicCode, DWORD dwFlags)
 			if (nWidth > nMaxWidth)
 			{
 				nMaxWidth = nWidth;
-				nWidth = 0;
 			}
+			nWidth = 0;
 			nLines++;
 			// 最大表示可能行数に到達していなければ計算を継続する
 			if (nLines < nMaxLines)
